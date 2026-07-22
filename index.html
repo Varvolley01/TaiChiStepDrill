@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tai Chi Step Drill Tracker</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f4f4f9;
+            color: #333;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            margin: 0;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+            text-align: center;
+            width: 100%;
+            max-width: 500px;
+        }
+        h1 {
+            margin-top: 0;
+            color: #2c3e50;
+            font-size: 1.8rem;
+        }
+        button {
+            background-color: #27ae60;
+            color: white;
+            border: none;
+            padding: 15px 40px;
+            font-size: 1.2rem;
+            font-weight: bold;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background 0.2s;
+            width: 100%;
+            margin-bottom: 25px;
+        }
+        button:focus {
+            outline: none;
+        }
+        button.running {
+            background-color: #c0392b;
+        }
+        .slider-container {
+            width: 100%;
+            margin-bottom: 25px;
+        }
+        input[type="range"] {
+            width: 50%;
+            margin: 10px 0;
+        }
+        .command-display {
+            font-size: 3rem;
+            font-weight: bold;
+            color: #2980b9;
+            margin: 15px 0;
+            min-height: 70px;
+            text-transform: uppercase;
+        }
+        .grid-container {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 5px;
+            width: 180px;
+            margin: 20px auto;
+        }
+        .grid-cell {
+            width: 55px;
+            height: 55px;
+            background-color: #e0e0e0;
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 0.8rem;
+            transition: all 0.2s;
+        }
+        .grid-cell.active {
+            background-color: #3498db;
+            color: white;
+            box-shadow: 0 0 10px rgba(52, 152, 219, 0.5);
+        }
+        .status-box {
+            background: #ecf0f1;
+            padding: 15px;
+            border-radius: 8px;
+            font-size: 1.1rem;
+            text-align: left;
+        }
+        .status-row {
+            margin-bottom: 8px;
+        }
+        .status-row:last-child {
+            margin-bottom: 0;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>Tai Chi Step Drill</h1>
+    
+    <button id="actionBtn">START</button>
+    
+    <div class="slider-container">
+        <label for="pauseSlider">Pause Time: <span id="sliderVal">3.0</span> seconds</label><br>
+        <input type="range" id="pauseSlider" min="0" max="4" step="0.1" value="3">
+    </div>
+
+    <div class="command-display" id="commandOut">-</div>
+
+    <!-- Visual 3x3 Grid Matrix -->
+    <div class="grid-container">
+        <div class="grid-cell" id="cell--1-1"></div>
+        <div class="grid-cell" id="cell-0-1"></div>
+        <div class="grid-cell" id="cell-1-1"></div>
+        <div class="grid-cell" id="cell--1-0"></div>
+        <div class="grid-cell" id="cell-0-0">Center</div>
+        <div class="grid-cell" id="cell-1-0"></div>
+        <div class="grid-cell" id="cell--1--1"></div>
+        <div class="grid-cell" id="cell-0--1"></div>
+        <div class="grid-cell" id="cell-1--1"></div>
+    </div>
+
+    <div class="status-box">
+        <div class="status-row"><strong>Stance:</strong> <span id="legOut">Left</span></div>
+        <div class="status-row"><strong>Facing:</strong> <span id="faceOut">North (0°)</span></div>
+        <div class="status-row"><strong>Coordinates:</strong> <span id="posOut">(0, 0)</span></div>
+    </div>
+</div>
+
+<script>
+    // State Variables
+    let isRunning = false;
+    let timerTimeout = null;
+    let wakeLock = null;
+
+    // Grid Coordinates: Center is (0,0). X is horizontal (-1 left, 1 right). Y is vertical (-1 back, 1 forward).
+    let posX = 0;
+    let posY = 0;
+    
+    // Direction tracking: 0 = North, 90 = East, 180 = South, 270 = West
+    let facingAngle = 0; 
+    let currentLeg = "Left"; 
+
+    const commands = ["SHIFT", "SWITCH", "STEP", "BACK", "INSIDE", "OUTSIDE"];
+
+    // DOM Target Elements
+    const actionBtn = document.getElementById('actionBtn');
+    const pauseSlider = document.getElementById('pauseSlider');
+    const sliderVal = document.getElementById('sliderVal');
+    const commandOut = document.getElementById('commandOut');
+    const legOut = document.getElementById('legOut');
+    const faceOut = document.getElementById('faceOut');
+    const posOut = document.getElementById('posOut');
+
+    // Handle slider updates
+    pauseSlider.addEventListener('input', () => {
+        sliderVal.textContent = parseFloat(pauseSlider.value).toFixed(1);
+    });
+
+    // Spacebar listener activation
+    window.addEventListener('keydown', (e) => {
+        if (e.code === "Space" || e.keyCode === 32) {
+            e.preventDefault(); 
+            toggleDrill();
+        }
+    });
+
+    actionBtn.addEventListener('click', () => {
+        actionBtn.blur(); // Remove focus so spacebar doesn't click it again
+        toggleDrill();
+    });
+
+    function toggleDrill() {
+        if (!isRunning) {
+            startDrill();
+        } else {
+            stopDrill();
+        }
+    }
+
+    async function startDrill() {
+        isRunning = true;
+        actionBtn.textContent = "STOP";
+        actionBtn.classList.add('running');
+        
+        // Reset to initial settings
+        posX = 0;
+        posY = 0;
+        facingAngle = 0;
+        currentLeg = "Left";
+        updateUI("-");
+
+        await requestWakeLock();
+
+        // Sequence 1: WOO JI -> Wait 3 seconds
+        speak("WOO JI");
+	updateUI("WUJI");
+        timerTimeout = setTimeout(() => {
+            if (!isRunning) return;
+            
+            // Sequence 2: ON GUARD -> Wait for slider time
+            speak("ON GUARD");
+            updateUI("EN GARDE");
+            
+            timerTimeout = setTimeout(drillLoop, getPauseTime());
+        }, 3000);
+    }
+
+    function stopDrill() {
+        isRunning = false;
+        actionBtn.textContent = "START";
+        actionBtn.classList.remove('running');
+        commandOut.textContent = "-";
+        clearTimeout(timerTimeout);
+        if ('speechSynthesis' in window) {
+            window.speechSynthesis.cancel();
+        }
+        releaseWakeLock();
+    }
+
+    function getPauseTime() {
+        return parseFloat(pauseSlider.value) * 1000;
+    }
+
+    // Main execution loop
+    function drillLoop() {
+        if (!isRunning) return;
+
+        let validCommandFound = false;
+        let chosenCommand = "";
+        let nextState = null;
+
+        // Shuffle move selection array randomly
+        let shuffledCommands = [...commands].sort(() => Math.random() - 0.5);
+
+        for (let cmd of shuffledCommands) {
+            nextState = calculateMove(cmd, posX, posY, facingAngle, currentLeg);
+            if (nextState.valid) {
+                chosenCommand = cmd;
+                validCommandFound = true;
+                break;
+            }
+        }
+
+        // Safety fallback if no grid coordinates fit
+        if (!validCommandFound) {
+            chosenCommand = "SWITCH"; 
+            nextState = calculateMove("SWITCH", posX, posY, facingAngle, currentLeg);
+        }
+
+        // Apply validated positioning
+        posX = nextState.x;
+        posY = nextState.y;
+        facingAngle = nextState.angle;
+        currentLeg = nextState.leg;
+
+        updateUI(chosenCommand);
+        speak(chosenCommand);
+
+        timerTimeout = setTimeout(drillLoop, getPauseTime());
+    }
+
+    // Grid boundary tracking and absolute direction mathematics
+    function calculateMove(cmd, x, y, angle, leg) {
+        let newX = x;
+        let newY = y;
+        let newAngle = angle;
+        let newLeg = leg;
+
+        let stepFwd = 0;
+        let stepRight = 0;
+
+        if (cmd === "SHIFT") {
+            if (leg === "Left") {
+                newAngle = (angle + 90) % 360;
+                newLeg = "Right";
+            } else {
+                newAngle = (angle + 270) % 360;
+                newLeg = "Left";
+            }
+        } 
+        else if (cmd === "SWITCH") {
+            newLeg = (leg === "Left") ? "Right" : "Left";
+        } 
+        else if (cmd === "STEP") {
+            stepFwd = 1;
+            newLeg = (leg === "Left") ? "Right" : "Left";
+        } 
+        else if (cmd === "BACK") {
+            stepFwd = -1;
+            newLeg = (leg === "Left") ? "Right" : "Left";
+        } 
+        else if (cmd === "INSIDE") {
+            if (leg === "Left") {
+                stepRight = 1;
+                newLeg = "Left";
+            } else {
+                stepRight = -1;
+                newLeg = "Right";
+            }
+        } 
+        else if (cmd === "OUTSIDE") {
+            if (leg === "Left") {
+                stepRight = -1;
+                newLeg = "Right";
+            } else {
+                stepRight = 1;
+                newLeg = "Left";
+            }
+        }
+
+        // Map movement values using the body's current rotation profile
+        let rad = (angle * Math.PI) / 180;
+        let deltaX = Math.round(stepFwd * Math.sin(rad) + stepRight * Math.cos(rad));
+        let deltaY = Math.round(stepFwd * Math.cos(rad) - stepRight * Math.sin(rad));
+
+        newX += deltaX;
+        newY += deltaY;
+
+        // Verify position stays inside boundary grid limits (-1, 0, or 1)
+        let valid = (newX >= -1 && newX <= 1 && newY >= -1 && newY <= 1);
+
+        return { valid, x: newX, y: newY, angle: newAngle, leg: newLeg };
+    }
+
+    // Voice system Engine 
+    function speak(text) {
+        if ('speechSynthesis' in window) {
+            window.speechSynthesis.cancel(); 
+            const utterance = new SpeechSynthesisUtterance(text);
+            
+            let voices = window.speechSynthesis.getVoices();
+            // Look for British accents
+            let ukVoice = voices.find(voice => voice.lang === 'en-GB' || voice.lang.startsWith('en-GB'));
+            
+            if (ukVoice) {
+                utterance.voice = ukVoice;
+            }
+            window.speechSynthesis.speak(utterance);
+        }
+    }
+
+    // UI Synchroniser
+    function updateUI(currentCommand) {
+        commandOut.textContent = currentCommand;
+        legOut.textContent = currentLeg;
+        
+        let dirString = "North";
+        if (facingAngle === 90) dirString = "East";
+        if (facingAngle === 180) dirString = "South";
+        if (facingAngle === 270) dirString = "West";
+        
+        faceOut.textContent = `${dirString} (${facingAngle}°)`;
+        posOut.textContent = `(${posX}, ${posY})`;
+
+        // Clear active classes from grid highlights
+        document.querySelectorAll('.grid-cell').forEach(cell => {
+            cell.classList.remove('active');
+            cell.textContent = '';
+        });
+
+        // Set layout indicators
+        document.getElementById('cell-0-0').textContent = 'Center';
+        
+        // Target and update active element highlight position
+        const activeCell = document.getElementById(`cell-${posX}-${posY}`);
+        if (activeCell) {
+            activeCell.classList.add('active');
+            activeCell.textContent = (currentLeg === "Left") ? "LS" : "RS";
+        }
+    }
+
+    // Wake Lock handling
+    async function requestWakeLock() {
+        if ('wakeLock' in navigator) {
+            try {
+                wakeLock = await navigator.wakeLock.request('screen');
+            } catch (err) {
+                console.warn(`WakeLock failed: ${err.message}`);
+            }
+        }
+    }
+
+    function releaseWakeLock() {
+        if (wakeLock !== null) {
+            wakeLock.release().then(() => { wakeLock = null; });
+        }
+    }
+
+    document.addEventListener('visibilitychange', async () => {
+        if (wakeLock !== null && document.visibilityState === 'visible' && isRunning) {
+            await requestWakeLock();
+        }
+    });
+
+    // Warm up voice index mapping on reload
+    if ('speechSynthesis' in window) {
+        window.speechSynthesis.getVoices();
+        if (window.speechSynthesis.onvoiceschanged !== undefined) {
+            window.speechSynthesis.onvoiceschanged = () => window.speechSynthesis.getVoices();
+        }
+    }
+
+    // Initialise default positions on view load
+    updateUI("-");
+</script>
+
+</body>
+</html>
