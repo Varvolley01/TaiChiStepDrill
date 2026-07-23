@@ -786,6 +786,33 @@
     window.addEventListener('DOMContentLoaded', () => {
         window.app = new DrillApp();
     });
+
+       let wakeLock = null;
+
+// Function to request the wake lock
+async function requestWakeLock() {
+  try {
+    wakeLock = await navigator.wakeLock.request('screen');
+    console.log('Screen Wake Lock is active');
+
+    // Re-request if the lock is released (e.g., user minimizes tab)
+    wakeLock.addEventListener('release', () => {
+      console.log('Screen Wake Lock was released');
+    });
+  } catch (err) {
+    console.error(`${err.name}, ${err.message}`);
+  }
+}
+
+// Request lock when page loads
+requestWakeLock();
+
+// Re-acquire lock when user switches back to this tab
+document.addEventListener('visibilitychange', async () => {
+  if (wakeLock !== null && document.visibilityState === 'visible') {
+    await requestWakeLock();
+  }
+});
   </script>
 </body>
 </html>
