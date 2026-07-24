@@ -295,6 +295,13 @@
             </div>
         </div>
 
+        <!-- Action Controls -->
+        <div class="controls-grid">
+            <button id="startBtn" class="btn btn-start">Start</button>
+            <button id="stopBtn" class="btn btn-stop" disabled>Stop</button>
+            <button id="resetBtn" class="btn btn-reset">Reset</button>
+        </div>
+
         <!-- Interactive Grid -->
         <div class="grid-container">
             <div class="grid" id="drillGrid">
@@ -325,12 +332,6 @@
             </div>
         </div>
 
-        <!-- Action Controls -->
-        <div class="controls-grid">
-            <button id="startBtn" class="btn btn-start">Start</button>
-            <button id="stopBtn" class="btn btn-stop" disabled>Stop</button>
-            <button id="resetBtn" class="btn btn-reset">Reset</button>
-        </div>
 
         <div class="keyboard-hint">
             Press <kbd>Space</kbd> to Start / Stop
@@ -544,12 +545,29 @@
             
             this.cells = document.querySelectorAll('.cell');
             
+            this._loadSettings();
             this._initSliderListener();
+        }
+
+        // LOAD FROM LOCAL STORAGE
+        _loadSettings() {
+            const savedSteps = localStorage.getItem('taichiSteps');
+            const savedPause = localStorage.getItem('taichiPause');
+
+            if (savedSteps !== null) {
+                this.stepsInput.value = savedSteps;
+            }
+            if (savedPause !== null) {
+                this.pauseSlider.value = savedPause;
+                this.pauseValueDisplay.textContent = `${parseFloat(savedPause).toFixed(2)}s`;
+            }
         }
 
         _initSliderListener() {
             this.pauseSlider.addEventListener('input', () => {
                 this.pauseValueDisplay.textContent = `${parseFloat(this.pauseSlider.value).toFixed(2)}s`;
+                // SAVE PAUSE TIME TO LOCAL STORAGE
+                localStorage.setItem('taichiPause', this.pauseSlider.value);
             });
         }
 
@@ -609,8 +627,10 @@
             this.ui = new UIController();
 
             this.isRunning = false;
-            this.userChosenSteps = 30;
-            this.remainingSteps = 30;
+            
+            // Set initial steps dynamically based on loaded settings
+            this.userChosenSteps = this.ui.getInitialSteps();
+            this.remainingSteps = this.userChosenSteps;
             this.lastCommand = null;
             this.abortController = null;
 
@@ -639,6 +659,8 @@
 
             this.ui.stepsInput.addEventListener('change', () => {
                 this.userChosenSteps = this.ui.getInitialSteps();
+                // SAVE STEPS TO LOCAL STORAGE
+                localStorage.setItem('taichiSteps', this.userChosenSteps);
             });
         }
 
@@ -787,7 +809,7 @@
         window.app = new DrillApp();
     });
 
-       let wakeLock = null;
+let wakeLock = null;
 
 // Function to request the wake lock
 async function requestWakeLock() {
